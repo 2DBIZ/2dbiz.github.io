@@ -375,7 +375,6 @@
 
 <script>
 (function () {
-  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var channels = Array.prototype.slice.call(document.querySelectorAll('[data-channel]'));
   var audioCtx = null;
 
@@ -399,31 +398,45 @@
     var rafId = null;
     var isScrubbing = false;
 
+    var logicalWidth = canvas.clientWidth || 400;
+    var logicalHeight = canvas.clientHeight || 64;
+
+    function sizeCanvas() {
+      var dpr = window.devicePixelRatio || 1;
+      var rect = canvas.getBoundingClientRect();
+      if (!rect.width) return;
+      logicalWidth = rect.width;
+      logicalHeight = rect.height;
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
     function drawIdle() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, logicalWidth, logicalHeight);
       var bars = 40;
-      var gap = canvas.width / bars;
-      ctx.fillStyle = 'rgba(140,140,152,0.25)';
+      var gap = logicalWidth / bars;
+      ctx.fillStyle = 'rgba(140,140,152,0.35)';
       for (var i = 0; i < bars; i++) {
-        var h = 3;
-        ctx.fillRect(i * gap, canvas.height - h, gap - 2, h);
+        var h = 4;
+        ctx.fillRect(i * gap, logicalHeight - h, gap - 2, h);
       }
     }
 
     function drawFrame() {
       analyser.getByteFrequencyData(dataArray);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, logicalWidth, logicalHeight);
       var bars = 40;
       var step = Math.floor(bufferLength / bars) || 1;
-      var gap = canvas.width / bars;
+      var gap = logicalWidth / bars;
       for (var i = 0; i < bars; i++) {
         var v = dataArray[i * step] || 0;
-        var h = Math.max(3, (v / 255) * canvas.height);
-        var grad = ctx.createLinearGradient(0, canvas.height - h, 0, canvas.height);
+        var h = Math.max(3, (v / 255) * logicalHeight);
+        var grad = ctx.createLinearGradient(0, logicalHeight - h, 0, logicalHeight);
         grad.addColorStop(0, '#3dfdff');
         grad.addColorStop(1, '#ffb020');
         ctx.fillStyle = grad;
-        ctx.fillRect(i * gap, canvas.height - h, gap - 2, h);
+        ctx.fillRect(i * gap, logicalHeight - h, gap - 2, h);
       }
       rafId = requestAnimationFrame(drawFrame);
     }
@@ -460,8 +473,12 @@
       if (channel.classList.contains('has-error')) return;
       if (audio.paused) {
         stopOthers();
-        ensureGraph();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
+        try {
+          ensureGraph();
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+        } catch (err) {
+          console.warn('Visualizer graph failed to initialize, playing without it:', err);
+        }
         audio.play();
       } else {
         audio.pause();
@@ -472,8 +489,10 @@
       playBtn.classList.add('is-playing');
       iconPlay.hidden = true;
       iconPause.hidden = false;
-      if (!reduceMotion) {
+      try {
         drawFrame();
+      } catch (err) {
+        console.warn('Visualizer draw failed for this channel:', err);
       }
     });
 
@@ -515,6 +534,8 @@
       channel.classList.add('has-error');
     });
 
+    sizeCanvas();
+    window.addEventListener('resize', sizeCanvas);
     drawIdle();
   });
 })();
